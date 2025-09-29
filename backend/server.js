@@ -3,7 +3,7 @@ const express = require('express');
 const cors = require('cors');
 const sqlite3 = require('sqlite3').verbose();
 const app = express();
-const PORT = 4001;
+const PORT = process.env.PORT || 4001;
 
 app.use(cors());
 app.use(express.json());
