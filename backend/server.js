@@ -2,10 +2,24 @@
 const express = require('express');
 const cors = require('cors');
 const sqlite3 = require('sqlite3').verbose();
+const path = require('path');
 const app = express();
 const PORT = process.env.PORT || 4001;
 
-app.use(cors());
+// Configure CORS for production with Vercel frontend
+const corsOptions = {
+  origin: [
+    'http://localhost:3000', // Local development
+    'http://localhost:5173', // Vite local development
+    'https://your-frontend-app.vercel.app', // Replace with your actual Vercel URL
+    /https:\/\/.*\.vercel\.app$/ // Allow all Vercel subdomains
+  ],
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization']
+};
+
+app.use(cors(corsOptions));
 app.use(express.json());
 
 // --- Background interval for updating trains arriving in next 30 minutes ---
@@ -376,6 +390,26 @@ app.get('/api/weather', (req, res) => {
   });
 });
 
+// Root endpoint
+app.get('/', (req, res) => {
+  res.json({
+    message: 'AI Train Traffic Management System API',
+    status: 'running',
+    version: '1.0.0',
+    endpoints: {
+      'GET /': 'API Information',
+      'GET /api/db-health': 'Database health check',
+      'GET /api/active': 'Count active trains',
+      'GET /api/today': 'Get today\'s train allocations',
+      'GET /api/trains': 'Get all train data',
+      'POST /api/update-realtime': 'Update real-time train data',
+      'GET /api/allocations/real-time': 'Get real-time allocations',
+      'GET /api/weather': 'Get current weather data'
+    }
+  });
+});
+
 app.listen(PORT, () => {
-  console.log(`Backend server running on http://localhost:${PORT}`);
+  console.log(`Backend server running on port ${PORT}`);
+  console.log(`Environment: ${process.env.NODE_ENV || 'development'}`);
 });
