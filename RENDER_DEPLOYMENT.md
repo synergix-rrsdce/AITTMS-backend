@@ -48,17 +48,38 @@
 
 8. **Click "Create Web Service"**
 
-### **3. Alternative: Manual Setup (If YAML doesn't work)**
+### **3. Alternative: Manual Setup (Recommended if Docker fails)**
 
 If the render.yaml approach has issues, use manual setup:
 
 1. **Choose "Web Service"**
 2. **Connect your GitHub repo**
 3. **Settings:**
-   - **Environment:** `Docker`
+   - **Environment:** `Node.js` (NOT Docker)
    - **Build Command:** `pip install -r requirements.txt && cd backend && npm install`
    - **Start Command:** `cd backend && npm start`
    - **Auto-Deploy:** `Yes`
+   - **Node Version:** `18`
+
+### **4. If Python Package Installation Fails:**
+
+**Common Error:** `failed to solve: process "/bin/sh -c pip3 install..."`
+
+**Solution Options:**
+
+**Option A: Use Node.js Environment (Recommended)**
+- Environment: `Node.js` instead of `Docker`
+- Build Command: `pip install -r requirements.txt && cd backend && npm install`
+- This uses Render's native Python support
+
+**Option B: Simplified Build**
+- Build Command: `pip install joblib numpy pandas scikit-learn requests beautifulsoup4 && cd backend && npm install`
+- Skip xgboost initially if it fails
+
+**Option C: Deploy without ML features first**
+- Comment out Python-related code temporarily
+- Deploy basic Express server first
+- Add ML features later
 
 ### **4. Deployment Process:**
 - Render will automatically build using your Dockerfile

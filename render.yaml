@@ -5,13 +5,15 @@ services:
     name: aittms-backend
     env: node
     plan: free
-    buildCommand: "./render-build.sh"
+    buildCommand: "pip install -r requirements.txt && cd backend && npm install"
     startCommand: "cd backend && npm start"
     envVars:
       - key: NODE_ENV
         value: production
       - key: PORT
         value: 10000
+      - key: PYTHON_VERSION
+        value: "3.11"
     healthCheckPath: /
     autoDeploy: true
     branch: main
