@@ -1,12 +1,12 @@
 {
   "name": "train-traffic-backend-simple",
   "version": "1.0.0",
-  "main": "server.js",
+  "main": "server.simple.js",
   "type": "commonjs",
   "scripts": {
-    "start": "node server.js",
+    "start": "node server.simple.js",
     "build": "echo 'No build step required'",
-    "dev": "node server.js"
+    "dev": "node server.simple.js"
   },
   "engines": {
     "node": ">=18.0.0",
@@ -14,6 +14,7 @@
   },
   "dependencies": {
     "cors": "^2.8.5",
-    "express": "^4.18.2"
+    "express": "^4.18.2",
+    "sqlite3": "^5.1.7"
   }
 }
