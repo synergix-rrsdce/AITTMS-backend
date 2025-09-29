@@ -6,13 +6,14 @@ const path = require('path');
 const app = express();
 const PORT = process.env.PORT || 4001;
 
-// Configure CORS for production with Vercel frontend
+// Configure CORS for production with Vercel frontend and Render backend
 const corsOptions = {
   origin: [
     'http://localhost:3000', // Local development
     'http://localhost:5173', // Vite local development
     'https://your-frontend-app.vercel.app', // Replace with your actual Vercel URL
-    /https:\/\/.*\.vercel\.app$/ // Allow all Vercel subdomains
+    /https:\/\/.*\.vercel\.app$/, // Allow all Vercel subdomains
+    /https:\/\/.*\.onrender\.com$/ // Allow all Render subdomains
   ],
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],

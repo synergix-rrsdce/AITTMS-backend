@@ -1,0 +1,17 @@
+# Render.com Deployment Configuration
+
+services:
+  - type: web
+    name: aittms-backend
+    env: node
+    plan: free
+    buildCommand: "./render-build.sh"
+    startCommand: "cd backend && npm start"
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 10000
+    healthCheckPath: /
+    autoDeploy: true
+    branch: main
