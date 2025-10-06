@@ -59,13 +59,18 @@ function initializeTodayDb() {
 
 // Get active train count
 app.get('/api/active', (req, res) => {
-  const todayDb = new sqlite3.Database(todayDbPath);
-  todayDb.get('SELECT COUNT(*) as count FROM allocations', (err, row) => {
-    todayDb.close();
+  const currentDay = getCurrentDay();
+  const mainDb = new sqlite3.Database(mainDbPath);
+  mainDb.get('SELECT COUNT(*) as count FROM allocations WHERE days = ?', [currentDay], (err, row) => {
+    mainDb.close();
     if (err) {
       return res.status(500).json({ error: 'Database error' });
     }
-    res.json({ count: row.count });
+    res.json({ 
+      count: row.count,
+      day: currentDay,
+      source: 'train_allocations.db'
+    });
   });
 });
 
