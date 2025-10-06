@@ -1,0 +1,16 @@
+# Render build configuration for optimal caching
+services:
+  - type: web
+    name: aittms-backend
+    env: node
+    plan: free
+    buildCommand: npm install
+    startCommand: npm start
+    envVars:
+      - key: NODE_ENV
+        value: production
+    healthCheckPath: /api/health
+    autoDeploy: true
+    # Enable build cache optimization
+    rootDir: backend
+    
