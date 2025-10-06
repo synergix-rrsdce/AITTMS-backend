@@ -1,288 +1,258 @@
 const express = require('express');
 const cors = require('cors');
-let sqlite3;
-let useMockData = false;
-
-// Try to load SQLite3, fallback to mock data if it fails
-try {
-  sqlite3 = require('sqlite3').verbose();
-  console.log('SQLite3 loaded successfully');
-} catch (error) {
-  console.log('SQLite3 failed to load, using mock data:', error.message);
-  useMockData = true;
-}
+const sqlite3 = require('sqlite3').verbose();
+const path = require('path');
+const { spawn } = require('child_process');
 
 const app = express();
-const PORT = process.env.PORT || 4001;
+const PORT = 4001;
 
-// Simple CORS configuration
-app.use(cors({
-  origin: [
-    'http://localhost:3000',
-    'http://localhost:5173',
-    /https:\/\/.*\.vercel\.app$/,
-    /https:\/\/.*\.onrender\.com$/
-  ]
-}));
-
+// Middleware
+app.use(cors());
 app.use(express.json());
 
-// Database setup
-const path = require('path');
-const fs = require('fs');
+// Database paths
+const mainDbPath = path.join(__dirname, '../database/train_allocations.db');
+const todayDbPath = path.join(__dirname, '../database/today.db');
 
-// Function to get present day as a string (e.g., 'Sun', 'Mon', etc.)
-function getPresentDay() {
+// Current day helper
+function getCurrentDay() {
   const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
   return days[new Date().getDay()];
 }
 
-let todayValue = getPresentDay();
+// Time conversion helper
+function timeToMinutes(timeStr) {
+  if (!timeStr || timeStr === 'TBD') return null;
+  const [h, m] = timeStr.split(":").map(Number);
+  if (isNaN(h) || isNaN(m)) return null;
+  return h * 60 + m;
+}
 
-// Mock data for fallback
-const mockTrains = [
-  {
-    id: 1,
-    train_number: '12345',
-    train_name: 'Rajdhani Express',
-    from_station: 'New Delhi',
-    to_station: 'Mumbai',
-    exp_arrival: '14:30',
-    allocated_platform: '1',
-    status: 'On Time',
-    type: 'Express',
-    passengers: 450
-  },
-  {
-    id: 2,
-    train_number: '67890',
-    train_name: 'Shatabdi Express',
-    from_station: 'Chennai',
-    to_station: 'Bangalore',
-    exp_arrival: '15:45',
-    allocated_platform: '2',
-    status: 'Delayed',
-    type: 'Express',
-    passengers: 380
-  }
-];
-
-// Database paths
-const dbPath = path.join(__dirname, 'database', 'train_allocations.db');
-const todayDbPath = path.join(__dirname, 'database', 'today.db');
-
-// Function to create/overwrite today.db for the current day
-function createTodayDb(callback) {
-  if (useMockData) {
-    if (callback) callback(null);
-    return;
-  }
-
-  // Remove existing today.db if it exists
-  if (fs.existsSync(todayDbPath)) {
-    try {
-      fs.unlinkSync(todayDbPath);
-    } catch (err) {
-      console.log('Warning: Could not remove existing today.db:', err.message);
-    }
-  }
-
+// Initialize today.db on server start
+function initializeTodayDb() {
+  const currentDay = getCurrentDay();
   const todayDb = new sqlite3.Database(todayDbPath);
+  
   todayDb.serialize(() => {
-    // Attach the main database
-    todayDb.run(`ATTACH DATABASE ? AS mainDb`, [dbPath], (err1) => {
-      if (err1) {
-        console.error('Error attaching main database:', err1);
-        todayDb.close();
-        useMockData = true;
-        if (callback) callback(err1);
+    todayDb.run(`ATTACH DATABASE ? AS mainDb`, [mainDbPath], (err) => {
+      if (err) {
+        console.error('Error attaching main database:', err);
         return;
       }
       
-      // Create the allocations table structure with today's data
-      todayDb.run(`CREATE TABLE allocations AS SELECT * FROM mainDb.allocations WHERE days = ?`, [todayValue], (err2) => {
-        if (err2) {
-          console.error('Error creating today.db table:', err2);
-          useMockData = true;
+      // Drop existing table and recreate with fresh data for today
+      todayDb.run(`DROP TABLE IF EXISTS allocations`);
+      todayDb.run(`CREATE TABLE allocations AS SELECT * FROM mainDb.allocations WHERE days = ?`, [currentDay], (err) => {
+        if (err) {
+          console.error('Error creating today table:', err);
+        } else {
+          console.log(`✅ Today's database initialized for ${currentDay}`);
         }
         todayDb.close();
-        if (callback) callback(err2);
       });
     });
   });
 }
 
-// Create today.db at server start (only if SQLite is available)
-if (!useMockData) {
-  createTodayDb((err) => {
-    if (err) {
-      console.error('Failed to create today.db:', err);
-      useMockData = true;
-    } else {
-      console.log('Successfully created today.db for', todayValue);
-    }
-  });
-}
+// API Endpoints
 
-// Root endpoint
-app.get('/', (req, res) => {
-  res.json({
-    message: 'AI Train Traffic Management System API',
-    status: 'running',
-    dataSource: useMockData ? 'mock' : 'database',
-    endpoints: [
-      'GET /',
-      'GET /api/health',
-      'GET /api/active',
-      'GET /api/today',
-      'GET /api/trains',
-      'GET /api/weather'
-    ]
-  });
-});
-
-// Health check
-app.get('/api/health', (req, res) => {
-  res.json({ 
-    status: 'healthy', 
-    timestamp: new Date().toISOString(),
-    dataSource: useMockData ? 'mock' : 'database'
-  });
-});
-
-// Active trains count
+// Get active train count
 app.get('/api/active', (req, res) => {
-  if (useMockData) {
-    res.json({ count: mockTrains.length });
-    return;
-  }
-
   const todayDb = new sqlite3.Database(todayDbPath);
   todayDb.get('SELECT COUNT(*) as count FROM allocations', (err, row) => {
     todayDb.close();
     if (err) {
-      console.error('Database error:', err);
-      res.json({ count: mockTrains.length }); // Fallback to mock data count
-      return;
+      return res.status(500).json({ error: 'Database error' });
     }
     res.json({ count: row.count });
   });
 });
 
-// Today's trains
-app.get('/api/today', (req, res) => {
-  const todayDb = new sqlite3.Database(todayDbPath);
-  todayDb.all('SELECT * FROM allocations', (err, rows) => {
-    todayDb.close();
-    if (err) {
-      console.error('Database error:', err);
-      return res.status(500).json({ error: 'Database error' });
-    }
-    res.json({ day: todayValue, trains: rows });
-  });
-});
-
-// All trains
+// Get all trains with real-time data
 app.get('/api/trains', (req, res) => {
   const todayDb = new sqlite3.Database(todayDbPath);
   todayDb.all('SELECT * FROM allocations', (err, rows) => {
     todayDb.close();
     if (err) {
-      console.error('Database error:', err);
       return res.status(500).json({ error: 'Database error' });
     }
     
-    // Get current time in minutes since midnight
     const now = new Date();
     const nowMinutes = now.getHours() * 60 + now.getMinutes();
     
-    // Helper to convert HH:mm string to minutes since midnight
-    function timeToMinutes(timeStr) {
-      if (!timeStr || timeStr === 'TBD') return null;
-      const [h, m] = timeStr.split(":").map(Number);
-      if (isNaN(h) || isNaN(m)) return null;
-      return h * 60 + m;
-    }
-    
-    // Transform and filter trains within ±2 hours (120 minutes) of now
+    // Transform and filter trains
     const trains = rows
       .map(row => ({
-        id: row.train_number?.toString() || row.id?.toString() || '',
-        name: row.train_name,
-        number: row.train_number,
+        id: row.train_number?.toString() || '',
+        name: row.train_name || "Unknown Train",
         type: row.type || "Express",
         from: row.from_station || "",
         to: row.to_station || "",
-        scheduled: row.exp_arrival || row.arrives || "",
-        estimated: row.real_arrival || row.estimated || "",
-        status: row.delay ? `Delayed ${row.delay}` : "On Time",
+        scheduled: row.exp_arrival || "",
+        estimated: row.real_arrival || row.exp_arrival || "",
+        status: row.delay && row.delay.includes("Delayed") ? row.delay : "On Time",
         platform: row.allocated_platform || "-",
-        passengers: row.passengers || 0,
-        priority: row.priority || "-"
+        passengers: row.passengers || Math.floor(Math.random() * 500) + 50,
+        priority: row.priority || "Normal",
+        delay: row.delay || "Right Time"
       }))
       .filter(train => {
         const schedMin = timeToMinutes(train.scheduled);
-        return schedMin !== null && Math.abs(schedMin - nowMinutes) <= 120;
+        return schedMin !== null && Math.abs(schedMin - nowMinutes) <= 240; // 4-hour window
+      })
+      .sort((a, b) => {
+        const aMin = timeToMinutes(a.scheduled);
+        const bMin = timeToMinutes(b.scheduled);
+        return (aMin || 0) - (bMin || 0);
       });
-      
-    res.json({ trains });
+    
+    res.json({ 
+      trains,
+      currentTime: `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}`,
+      totalTrains: trains.length
+    });
   });
 });
 
-// Weather data (using Python script)
+// Weather data with caching
+let cachedWeather = null;
+let lastWeatherFetch = 0;
+const WEATHER_CACHE_DURATION = 30 * 60 * 1000; // 30 minutes
+
 app.get('/api/weather', (req, res) => {
-  const { spawn } = require('child_process');
-  const pyPath = path.join(__dirname, 'py', 'scrape_weather.py');
+  const now = Date.now();
   
-  const pyProcess = spawn('python', [pyPath]);
+  // Return cached data if available and fresh
+  if (cachedWeather && (now - lastWeatherFetch) < WEATHER_CACHE_DURATION) {
+    return res.json({
+      ...cachedWeather,
+      cached: true,
+      lastUpdated: new Date(lastWeatherFetch).toISOString()
+    });
+  }
+  
+  // Fetch fresh weather data
+  const pyProcess = spawn('python', [path.join(__dirname, '..', 'py', 'scrape_weather.py')]);
   let dataString = '';
   
   pyProcess.stdout.on('data', (data) => {
     dataString += data.toString();
   });
   
-  pyProcess.on('close', (code) => {
-    if (code !== 0) {
-      return res.json({
-        temperature: 25,
-        humidity: 60,
-        precipitation: 0,
-        condition: 'Sunny',
-        error: 'Weather data unavailable'
-      });
-    }
-    
-    try {
-      const weatherData = JSON.parse(dataString);
-      res.json(weatherData);
-    } catch (e) {
-      res.json({
-        temperature: 25,
-        humidity: 60,
-        precipitation: 0,
-        condition: 'Sunny',
-        error: 'Weather parsing error'
-      });
-    }
+  pyProcess.stderr.on('data', (data) => {
+    console.error('Weather script error:', data.toString());
   });
   
-  pyProcess.on('error', (err) => {
-    res.json({
-      temperature: 25,
-      humidity: 60,
-      precipitation: 0,
-      condition: 'Sunny',
-      error: 'Python script error'
+  pyProcess.on('close', (code) => {
+    try {
+      const weather = JSON.parse(dataString.replace(/'/g, '"'));
+      cachedWeather = weather;
+      lastWeatherFetch = Date.now();
+      
+      res.json({
+        ...weather,
+        cached: false,
+        lastUpdated: new Date().toISOString(),
+        location: "Bararuni Junction, Bihar"
+      });
+    } catch (e) {
+      console.error('Weather parse error:', e);
+      if (cachedWeather) {
+        res.json({
+          ...cachedWeather,
+          cached: true,
+          error: 'Failed to fetch new data',
+          lastUpdated: new Date(lastWeatherFetch).toISOString()
+        });
+      } else {
+        res.status(500).json({ error: 'Failed to fetch weather data' });
+      }
+    }
+  });
+});
+
+// Update real-time data for specific train
+app.post('/api/update-train/:trainId', (req, res) => {
+  const trainId = req.params.trainId;
+  const todayDb = new sqlite3.Database(todayDbPath);
+  
+  todayDb.get('SELECT rowid, train_number, train_name FROM allocations WHERE train_number = ?', [trainId], (err, row) => {
+    if (err || !row) {
+      todayDb.close();
+      return res.status(404).json({ error: 'Train not found' });
+    }
+    
+    const formattedName = (row.train_name || '').toLowerCase().replace(/\s+/g, '-');
+    const inputStr = `${formattedName}-${row.train_number}`;
+    const pyPath = path.join(__dirname, '..', 'py', 'real_time.py');
+    const pyProcess = spawn('python', [pyPath, inputStr]);
+    
+    let dataString = '';
+    pyProcess.stdout.on('data', (chunk) => {
+      dataString += chunk.toString();
+    });
+    
+    pyProcess.on('close', () => {
+      try {
+        const parsed = JSON.parse(dataString.replace(/'/g, '"'));
+        const realArrival = parsed.real_arrival || null;
+        const delay = parsed.delay || null;
+        
+        todayDb.run(
+          'UPDATE allocations SET real_arrival = ?, delay = ? WHERE rowid = ?',
+          [realArrival, delay, row.rowid],
+          (err2) => {
+            todayDb.close();
+            if (err2) {
+              return res.status(500).json({ error: 'Update failed' });
+            }
+            res.json({
+              trainId,
+              realArrival,
+              delay,
+              updated: new Date().toISOString()
+            });
+          }
+        );
+      } catch (e) {
+        todayDb.close();
+        res.status(500).json({ error: 'Failed to parse real-time data' });
+      }
     });
   });
 });
 
-// 404 handler
-app.get('*', (req, res) => {
-  res.status(404).json({ error: 'Route not found' });
+// Database health check
+app.get('/api/db-health', (req, res) => {
+  const mainDb = new sqlite3.Database(mainDbPath);
+  mainDb.get('SELECT COUNT(*) as count FROM allocations', (err, mainResult) => {
+    mainDb.close();
+    
+    const todayDb = new sqlite3.Database(todayDbPath);
+    todayDb.get('SELECT COUNT(*) as count FROM allocations', (err2, todayResult) => {
+      todayDb.close();
+      
+      res.json({
+        mainDb: err ? 'error' : `${mainResult.count} records`,
+        todayDb: err2 ? 'error' : `${todayResult.count} records`,
+        status: (!err && !err2) ? 'healthy' : 'issues detected'
+      });
+    });
+  });
 });
 
 // Start server
 app.listen(PORT, () => {
-  console.log(`🚀 Server running on port ${PORT}`);
+  console.log(`🚂 Train Management Server running on http://localhost:${PORT}`);
+  console.log('📊 Initializing today\'s database...');
+  initializeTodayDb();
+  
+  console.log('\n📡 Available API endpoints:');
+  console.log('  GET  /api/trains        - Train schedules with real-time data');
+  console.log('  GET  /api/active        - Active train count');
+  console.log('  GET  /api/weather       - Current weather data');
+  console.log('  POST /api/update-train/:id - Update specific train real-time data');
+  console.log('  GET  /api/db-health     - Database health status');
+  console.log('\n🔄 Server ready for real-time train management!');
 });
