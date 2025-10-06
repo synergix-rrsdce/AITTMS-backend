@@ -12,8 +12,8 @@ app.use(cors());
 app.use(express.json());
 
 // Database paths
-const mainDbPath = path.join(__dirname, '../database/train_allocations.db');
-const todayDbPath = path.join(__dirname, '../database/today.db');
+const mainDbPath = path.join(__dirname, 'database/train_allocations.db');
+const todayDbPath = path.join(__dirname, 'database/today.db');
 
 // Current day helper
 function getCurrentDay() {
