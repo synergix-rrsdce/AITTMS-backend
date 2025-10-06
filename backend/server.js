@@ -71,6 +71,7 @@ app.get('/api/active', (req, res) => {
       day: currentDay,
       source: 'train_allocations.db'
     });
+    console.log(`Active trains for ${currentDay}: ${row.count}`);
   });
 });
 
